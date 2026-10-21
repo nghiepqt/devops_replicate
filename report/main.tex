@@ -29,7 +29,7 @@
 \newcommand{\tpl}[1]{\texttt{\small #1}}
 
 \title{Log Representations and Learning Regimes for Log-based Anomaly Detection: A Replication and Extension Study}
-\author{[Student 1]$^{1}$, [Student 2]$^{1}$, [Student 3]$^{1}$
+\author{Pham Minh Dung Duong (2553085)$^{1}$, Thanh Nghiep Quan (2557078)$^{1}$, Tran Vo (2553737)$^{1}$
     \\
     \emph{$^{1}$ Dep. of Computer and Software Engineering, Polytechnique Montréal, Canada}}
 
@@ -119,6 +119,8 @@ For HDFS, one session contains all lines that mention the same block id, in log 
 \paragraph{Message Count Vector (MCV)} One feature per template counts how many times it appears in the session. The vocabulary is built from the training sessions only, and events of templates never seen in training are dropped. We use MCV for the Random Forest because the original study found it to be the best representation for classical models. We also use it for PCA, which was designed for count matrices~\cite{xu2009detecting}.
 
 \paragraph{BERT embeddings} Each template text is given to the pre-trained \texttt{bert-base-uncased} model~\cite{devlin2019bert}. Its embedding is the mean of the token vectors of the second-to-last layer (768 dimensions, at most 50 tokens). These settings follow the original replication package. A session becomes a sequence of these vectors, which the LSTM reads in order. In the original study, BERT gave the best results for the models that use the order of events in 7 of 8 cases, and it gives the LSTM some knowledge of the meaning of each event.
+
+\paragraph{Why these pairings} We pair the level of each representation with the mechanism of the model, as Wu et al.~do: ``all of our studied traditional models take sequence-level representation as input'', while ``LSTM models require fixed length event-level representation as input''~\cite{wu2023effectiveness} (\S4.3.1). For the RF we use MCV because it is exactly the fixed-dimension, order-free feature vector that a forest of CART trees consumes~\cite{breiman2001random}, and because the original study ranks it first: in their SK-EST test, the three classical representations ``outperformed their semantic-based counterparts, with MCV achieving the best rank''~\cite{wu2023effectiveness} (\S5.1). For the LSTM we use BERT embeddings because each of its ordered input positions needs a dense, context-aware vector: ``the BERT embedding is ranked first in the deep-model-only ranking'' and ``achieves the best performance for 7 out of the 8 cases of the models that can leverage sequential information''~\cite{wu2023effectiveness} (\S5.1). PCA keeps the event count matrix it was designed for---Xu et al.~``adopt the unsupervised dimension reduction method PCA with event count matrix to detect anomalies''~\cite{wu2023effectiveness,xu2009detecting} (\S3.1). LogGPT, finally, reads the raw template-id sequence: its GPT-2 backbone learns its own representation internally, being trained to predict the next template id of normal sessions~\cite{han2023loggpt}.
 
 \subsection{Supervised models (Part 1)}
 

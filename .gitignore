@@ -8,3 +8,17 @@ GroupAssignment_Fall2025.pdf
 /assignment_report
 .~lock.LOG6309E_group_presentation_IGNOREIT.pptx#
 /external
+
+# Claude local docs (kept out of the shared repo)
+CLAUDE.md
+CLAUDE-activeContext.md
+CLAUDE.local.md
+
+# Notebook cruft
+.ipynb_checkpoints/
+notebooks/cache/
+
+# macOS + local notebook runs
+.DS_Store
+devops6309_cache/
+sk_rank.R
