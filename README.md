@@ -9,6 +9,75 @@ and that the simple Message Count Vector (MCV) is hard to beat. We replicate the
 HDFS and BGL, then extend the study on HDFS with two models that need fewer labels, a
 statistical ranking over 10 resampled train/test splits, and SHAP explanations of the winner.
 
+## Architecture
+
+Two stages share one representation pipeline: `part1` builds it and replicates RQ1; `part2`
+reuses it unchanged — through a bridge (`part2/src/p1.py`) that loads Part 1's package under
+the alias `p1` so sessions and splits are literally the same objects — and adds the extension
+models, the statistical ranking, and the explanations. `notebooks/` re-implements the whole
+flow cell-by-cell for Google Colab; `report/` holds the IEEE paper.
+
+```
+Loghub HDFS.log (11.2M lines) · BGL.log (4.7M lines)         data/ (gitignored)
+        │
+        │  PART 1 — replication of RQ1            one driver: src/run_part1.py
+        │  ─────────────────────────────────────────────────────────────────
+        ├─ preprocess.py          variable masking (IPs, paths, block ids, numbers)
+        │                          — general framework of Qin et al., SANER 2025
+        ├─ drain.py               streaming Drain parser (depth 4, similarity 0.5)
+        ├─ parsing_eval.py        grouping accuracy vs Loghub-2.0 (1.000 HDFS / 0.970 BGL)
+        ├─ partition.py           sessions — HDFS blocks · BGL 6-hour windows
+        ├─ split.py               seeded train/test splits
+        ├─ represent_mcv.py       Message Count Vector per session
+        ├─ represent_bert.py      frozen BERT template embeddings, sliding windows
+        ├─ feature_selection.py   Spearman correlation clustering + VIF (train data only)
+        ├─ models/                rf.py — RF on MCV · lstm.py — LSTM on BERT windows
+        └─ evaluate.py            F1 / AUC per run → JSON in results/ → compare with paper
+        │
+        │  PART 2 — extension on HDFS, seeds 0–9  one driver: src/run_resamples.py
+        │  ─────────────────────────────────────────────────────────────────
+        ├─ p1.py             bridge to part1 (shared sessions and splits)
+        ├─ models/pca.py     PCA detector — loglizer port, tf-idf counts, SPE + Q-statistic
+        ├─ models/loggpt/    LogGPT — Nokia port, GPT-2 trained on 5,000 normal sessions + RL
+        ├─ scores.py         one continuous score per session → fixed decision rule
+        ├─ scott_knott.R     Scott-Knott ESD ranking of the models across the 10 resamples
+        └─ explain.py        SHAP on the winning RF, grouped by correlated templates
+```
+
+Three rules hold across the whole pipeline, so every number below is comparable:
+
+- **No leakage** — vectorizers and feature selection are fit on TRAIN data only.
+- **Same test set** — within a resample, every model is scored on exactly the same test
+  sessions (the full 30% split, asserted by the driver), with one binary prediction per
+  session (`scores.py`, fairness rules F5/F6: threshold and AUC always describe one score).
+- **Everything on disk** — each run writes JSON/parquet sidecars (model, dataset, seed,
+  selection, per-session scores) that `runs.csv`, the R ranking, and the report figures are
+  rebuilt from.
+
+### Method in one paragraph
+
+Drain (depth 4, similarity 0.5) parses each log into event templates after Qin et al.'s
+preprocessing masks variables — grouping accuracy 1.000 (HDFS) and 0.970 (BGL) on Loghub-2.0
+ground truth. Sessions are HDFS blocks and BGL 6-hour windows. Each model receives the
+representation that matches its mechanism: RF and PCA read session-level count vectors (MCV;
+PCA keeps the tf-idf-weighted count matrix it was designed for), the LSTM reads frozen BERT
+template embeddings event by event through sliding windows, and LogGPT reads raw template-id
+sequences and learns its own embedding. All models output a continuous anomaly score per
+session with a fixed decision rule (0.5, the Q-statistic, or Top-K).
+
+### Where things live
+
+- `part1/` — replication of RQ1: Qin-et-al. preprocessing + streaming Drain (HDFS 55 s),
+  sessions, seeded splits, MCV + BERT representations, RF and LSTM (with/without
+  correlation+VIF feature selection), 6 seeds, comparison with the paper. See `part1/README.md`.
+- `part2/` — extension on HDFS: PCA (loglizer port) and LogGPT (Nokia port) + the two
+  supervised models, 10 resamples, Scott-Knott ESD ranking (R), SHAP explanation.
+  See `part2/README.md`.
+- `notebooks/` — self-contained Google Colab notebooks, incl. the independent 10-seed re-run
+  of the extension. See `notebooks/README.md`.
+- `report/` — IEEE report (`main.tex` → `main.pdf`, 21 references, figures from `make_figures.py`).
+- `DECISIONS.md` — every design decision with its rationale and its deviation from the paper.
+
 ## Results at a glance
 
 **Part 1 — replication of RQ1** (seed 42; F1, session level, vs the paper):
@@ -43,22 +112,6 @@ An **independent re-run of the whole pipeline on Google Colab** (different machi
 four decimals (RF F1 .9982, PCA .7688) and the LSTM and LogGPT within their GPU-seed variance,
 with the same Scott-Knott ordering.
 
-## Repository layout
-
-```
-part1/    Replication of RQ1: Qin-et-al. preprocessing + streaming Drain (HDFS 55 s),
-          sessions, seeded splits, MCV + BERT representations, RF and LSTM (with/without
-          correlation+VIF feature selection), 6 seeds, comparison with the paper.
-          See part1/README.md.
-part2/    Extension on HDFS: PCA (loglizer port) and LogGPT (Nokia port) + the two
-          supervised models, 10 resamples, Scott-Knott ESD ranking (R), SHAP explanation.
-          See part2/README.md.
-report/   IEEE report (main.tex -> main.pdf, 21 references, figures).
-notebooks/  Self-contained Google Colab notebooks, incl. the independent 10-seed re-run
-          of the extension. See notebooks/README.md.
-DECISIONS.md  Every design decision with its rationale and its deviation from the paper.
-```
-
 ## Reproducing
 
 ### The easy way — one notebook, no setup
@@ -84,19 +137,6 @@ Rscript src/scott_knott.R results
 HDFS_v1 and BGL from Loghub (Zenodo record 8196385, ~250 MB zipped): HDFS.log 11,175,629
 lines / 575,061 labelled blocks (2.9% anomalous); BGL.log 4,747,963 lines / 348,460 alert
 lines (7.3%). Logs are not redistributed here; every script and notebook downloads them.
-
-## Method in one paragraph
-
-Drain (depth 4, similarity 0.5) parses each log into event templates after the general
-preprocessing framework of Qin et al. (SANER 2025) masks variables (IPs, paths, block ids,
-numbers) — grouping accuracy 1.000 (HDFS) and 0.970 (BGL) on Loghub-2.0 ground truth. Sessions
-are HDFS blocks and BGL 6-hour windows. Each model receives the representation that matches
-its mechanism: RF and PCA read session-level count vectors (MCV; PCA keeps the tf-idf-weighted
-count matrix it was designed for), the LSTM reads frozen BERT template embeddings event by
-event through sliding windows, and LogGPT reads raw template-id sequences and learns its own
-embedding. All models output a continuous anomaly score per session with a fixed decision rule
-(0.5, the Q-statistic, or Top-K), and all models of a resample are scored on exactly the same
-test sessions.
 
 ## Credits and licenses
 
