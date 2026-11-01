@@ -37,25 +37,27 @@
 \maketitle
 
 \begin{abstract}
-\textit{Context:} Machine learning models for log-based anomaly detection need the raw logs to be parsed and turned into numbers. Wu et al.~\cite{wu2023effectiveness} studied how this log representation step affects the models.
-\textit{Objective:} We replicate their first research question for two supervised models on two datasets. We also check whether removing correlated features helps. We then extend the study on one dataset with an unsupervised and a semi-supervised model, a statistical ranking, and an explanation of the best model.
-\textit{Method:} We parse HDFS and BGL with Drain and the preprocessing of Qin et al. We train a Random Forest on message count vectors and an LSTM on BERT template embeddings, with and without correlation and redundancy analysis. On HDFS we add PCA (unsupervised) and LogGPT (a GPT-2 model trained on normal sessions only). We retrain the four models on 10 random train/test splits, rank them with the Scott-Knott ESD test, and explain the best model with SHAP.
-\textit{Results:} The Random Forest results are reproduced (F1 0.999 on HDFS, 0.919 against 0.891 on BGL). The LSTM is better than reported on HDFS (0.987 against 0.959), which we trace to a windowing bug in the original code, and worse on BGL (0.870 against 0.931). Removing correlated features does not improve accuracy. On HDFS, the ranking is RF $>$ LSTM $>$ LogGPT $>$ PCA for both F1 and AUC. LogGPT reaches a mean F1 of 0.856 from 5,000 normal sessions, and its F1 depends on its Top-K threshold. SHAP shows that the Random Forest relies mostly on one error template and on the number of events of the block write pipeline.
-\textit{Conclusion:} On HDFS, a supervised model on simple count features gives the best results. Without labels, the threshold and the training protocol matter as much as the model.
+Machine learning models for log-based anomaly detection need the raw logs to be parsed and turned into numbers. Wu et al.~\cite{wu2023effectiveness} studied how this log representation step affects the models.
+We replicate their first research question for two supervised models on two datasets. We also check whether removing correlated features helps. We then extend the study on one dataset with an unsupervised and a semi-supervised model, a statistical ranking, and an explanation of the best model.
+We parse HDFS and BGL with Drain and the preprocessing of Qin et al. We train a Random Forest on message count vectors and an LSTM on BERT template embeddings, with and without correlation and redundancy analysis. On HDFS we add PCA (unsupervised) and LogGPT (a GPT-2 model trained on normal sessions only). We retrain the four models on 10 random train/test splits, rank them with the Scott-Knott ESD test, and explain the best model with SHAP.
+The Random Forest results are reproduced (F1 0.999 on HDFS, 0.919 against 0.891 on BGL). The LSTM is better than reported on HDFS (0.987 against 0.959), which we trace to a windowing bug in the original code, and worse on BGL (0.870 against 0.931). Removing correlated features does not improve accuracy. On HDFS, the ranking is RF $>$ LSTM $>$ LogGPT $>$ PCA for both F1 and AUC. LogGPT reaches a mean F1 of 0.856 from 5,000 normal sessions, and its F1 depends on its Top-K threshold. SHAP shows that the Random Forest relies mostly on one error template and on the number of events of the block write pipeline.
+On HDFS, a supervised model on simple count features gives the best results. Without labels, the threshold and the training protocol matter as much as the model.
 \end{abstract}
 
 \section{Introduction}
 \label{sec:introduction}
 
-Software systems write logs that record what happens at run time. When a failure occurs, engineers often look at these logs first. Because modern systems produce millions of log lines, automated log-based anomaly detection has been studied widely~\cite{he2016experience,du2017deeplog}. Most approaches follow the same pipeline: the raw log lines are parsed into event templates, grouped into sequences (sessions), represented as numeric features, and given to a model that labels each session as normal or anomalous.
+Software systems write logs that record what happens at run time. When a failure occurs, engineers often look at these logs first. Because modern systems produce millions of log lines, automated log-based anomaly detection has been studied widely~\cite{he2016experience,du2017deeplog}. 
+Most approaches follow the same pipeline: the raw log lines are parsed into event templates, grouped into sequences (sessions), represented as numeric features, and given to a model that labels each session as normal or anomalous.
 
-Wu et al.~\cite{wu2023effectiveness} studied the representation step of this pipeline. In their RQ1 they compared six representations with seven models on four datasets. They found that the choice of representation has a non-negligible effect on the results, that the simple Message Count Vector (MCV) performs best overall, and that BERT embeddings work best for models that use the order of events. This report presents a partial replication and an extension of that work. It answers four research questions:
+Wu et al.~\cite{wu2023effectiveness} studied the representation step of this pipeline. In their RQ1 they compared six representations with seven models on four datasets. They found that the choice of representation has a non-negligible effect on the results, that the simple Message Count Vector (MCV) performs best overall, 
+and that BERT embeddings work best for models that use the order of events. This report presents a partial replication and an extension of that work. It answers four research questions:
 
 \begin{itemize}
-\item \textbf{RQ1 (replication):} Can we reproduce the RQ1 results of Wu et al. for a classical and a deep learning supervised model on HDFS and BGL?
-\item \textbf{RQ2 (feature selection):} Does removing correlated and redundant features change the performance of the classical model?
-\item \textbf{RQ3 (extension):} How do an unsupervised and a semi-supervised model compare with the two supervised models when all four are trained and tested under the same protocol?
-\item \textbf{RQ4 (explanation):} Which log events drive the decisions of the best model, and are these explanations stable?
+\item \textbf{RQ1 (Replication):} Can we reproduce the RQ1 results of Wu et al. for a classical and a deep learning supervised model on HDFS and BGL?
+\item \textbf{RQ2 (Feature Selection):} Does removing correlated and redundant features change the performance of the classical model?
+\item \textbf{RQ3 (Extension):} How do an unsupervised and a semi-supervised model compare with the two supervised models when all four are trained and tested under the same protocol?
+\item \textbf{RQ4 (Explanation):} Which log events drive the decisions of the best model, and are these explanations stable?
 \end{itemize}
 
 Our replication found three issues in the original replication package that change the reported numbers. We fixed them and measured the effect of each one. All the code, configuration files, and result files that produce the numbers in this report are in our replication package (folders \texttt{part1/} and \texttt{part2/}). Every design decision is logged there with its reason (\texttt{DECISIONS.md}).
