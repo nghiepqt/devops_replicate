@@ -468,3 +468,34 @@ named next to them.
   n_clusters matrix of per-resample importance (`sk_feature_importance.csv`, `src/sk_features.R`).
 - Source: brief §9.5
 - Deviation from paper: n/a
+
+### P2-25 — Control for training size (reported, never used for the ranking)
+- Stage: evaluation (added after the presentation, following the instructor's comment on the first threat of slide 12)
+- Decision: `src/matched_size.py` retrains RF, LSTM and PCA on n = 500, 5,000 and 50,000 sessions drawn at random from each train
+  split (`default_rng(10000 + seed)`, class mix as drawn), plus PCA on LogGPT's 5,000 normal sessions for all 10 seeds. All runs use
+  the same full test splits as the ranking (`results/followup/matched_size.csv`). RF and PCA on the whole train split are also rerun as a
+  regression check: F1 is identical to `results/runs.csv`, as is PCA (5,000 normal) at seed 0. LSTM at n = 500 is not reliable: 3 of 10
+  validation sets (50 sessions) contain no anomaly, so epoch 1 is kept. LogGPT is not retrained on other sizes (57 min per run).
+- Source: instructor feedback, 2026-10-24
+- Deviation from paper: n/a
+
+### P2-26 — Statistics for the instructor's questions on PCA, LogGPT spread and tokens
+- Stage: evaluation
+- Decision: `src/followup_stats.py` computes from stored results (`results/followup/followup_stats.json`): the anomalies PCA misses per
+  pair of resamples, their SPE, and the best F1 over all thresholds (chosen on the test set, diagnostic only); LogGPT F1 std under the
+  50% rule and at fixed K; LogGPT size and token counts. A token is a template id, `<bos>` or `<eos>`. Counts come from session lengths
+  and the run logs, not from a profiler. Beam steps = generated tokens x 20 and are an estimate. Test scoring runs each distinct sequence once.
+  Temperature: `generate(num_beams=20, do_sample=True)` sets none, so the library default (1.0) applies; scoring does not sample.
+- Source: instructor feedback, 2026-10-24
+- Deviation from paper: n/a
+
+### P2-27 — LogGPT w/o RL: spread from the random state alone
+- Stage: evaluation (added after the presentation, following the instructor's comment on LogGPT's spread)
+- Decision: `src/loggpt_init_spread.py` repeats pre-training with init seeds 0-4 on the 5,000 sessions and the test split of seed 0, changing
+  only the seed of the initialization and dropout (`results/followup/loggpt_init_spread.csv`). K = 7 in all runs. F1 0.843 ± 0.010 (0.830-0.857),
+  against 0.848 ± 0.039 over the 10 resamples. RL is not repeated (about 53 min per run), so the effect of its sampling and of the temperature is not
+  measured. One sample and five runs: an indication only. Init seed 0 repeats the original run, with close but not identical results
+  (F1 0.8305 vs 0.8321, AUC 0.9468 vs 0.9595); we did not look for the cause. The first job was stopped after four runs when the session ended;
+  the fifth run was added by resuming, and the CSV keeps all five.
+- Source: instructor feedback, 2026-10-24
+- Deviation from paper: n/a

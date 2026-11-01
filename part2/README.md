@@ -27,6 +27,9 @@ part2/
     explain.py                SHAP explanation of RF + MCV -> results/explain/
     sk_features.R             (optional) Scott-Knott ESD on per-resample cluster importance
     report.py                 builds results/RESULTS_PART2.md, descriptive_stats.csv, cost.csv, figures
+    matched_size.py           control for training size, not ranked -> results/followup/matched_size.csv
+    followup_stats.py         PCA stability, LogGPT spread and tokens -> results/followup/followup_stats.json
+    loggpt_init_spread.py     LogGPT w/o RL, one sample, 5 init seeds -> results/followup/loggpt_init_spread.csv
   results/
     runs.csv                  one row per (seed, model): P, R, F1, AUC, TP/FP/TN/FN, times, device
     scores/{model}_seed{s}.parquet   one row per test session: session_idx, session_id, label, score, prediction
