@@ -486,6 +486,9 @@ named next to them.
   50% rule and at fixed K; LogGPT size and token counts. A token is a template id, `<bos>` or `<eos>`. Counts come from session lengths
   and the run logs, not from a profiler. Beam steps = generated tokens x 20 and are an estimate. Test scoring runs each distinct sequence once.
   Temperature: `generate(num_beams=20, do_sample=True)` sets none, so the library default (1.0) applies; scoring does not sample.
+  Added while reviewing the report (2026-11-02), from `results/scores/*.parquet` and the sessions: the share of PCA's missed anomalies with the
+  replication template (T9) and of anomalies with the deletion error (T33, and how many of them PCA detects), plus the LogGPT sessions with a
+  template unseen in training and how many of them are flagged (keys `pca_templates`, `loggpt_unseen`).
 - Source: instructor feedback, 2026-10-24
 - Deviation from paper: n/a
 

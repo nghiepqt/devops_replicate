@@ -20,12 +20,12 @@ The ablation in §10 points to the cause:
   optimiser step per session (infeasible on HDFS: about 362k steps per epoch) and window-level evaluation, may
   also have played a role. We cannot separate them on HDFS.
 
-### C. BGL — RF + MCV: replicated within noise (ΔF1 = +0.028), with P and R apparently swapped
+### C. BGL — RF + MCV: slightly above the paper (ΔF1 = +0.028), with P and R apparently swapped
 We get P 0.963 / R 0.878; the paper reports P 0.830 / R 0.963. The pattern matches the package bug in D-13:
 `metrics(y_test, y_)` is called with its arguments reversed, so the paper's printed "precision" is the recall
 and vice versa. Read swapped, the paper's numbers are P 0.963 / R 0.830, close to ours. F1 is symmetric in P
-and R, so the bug does not affect it. Across seeds F1 = 0.922 ± 0.019, within one standard deviation of the
-paper's 0.891 + 0.028. The remaining differences are 826 vs 718 sessions (D-08), 10 trees with a single seed vs
+and R, so the bug does not affect it. Across seeds F1 = 0.922 ± 0.019, about 1.6 standard deviations above the
+paper's 0.891, and all six seeds are above it (lowest 0.899). The remaining differences are 826 vs 718 sessions (D-08), 10 trees with a single seed vs
 an average of 5 unseeded runs (D-12), and a different parser and preprocessing (D-02).
 
 ### D. BGL — LSTM + BERT: lower than the paper (ΔF1 = −0.061; seed mean −0.103) — hypotheses required
@@ -82,7 +82,7 @@ it. We report it as is; nothing we can change while staying faithful to the pape
   interchangeable, but not exactly. Random Forests are not hurt by collinearity in prediction: a split uses one
   feature at a time, and correlated duplicates only spread importance across features. So removing them can
   only lose information.
-- **BGL:** the average effect is within noise (+0.007 F1) and the variance doubles (one seed drops to 0.848).
+- **BGL:** the average effect is within noise (+0.007 F1) and the standard deviation doubles (one seed drops to 0.848).
   With p ≈ 410 features and n = 660 sessions, `max_features = sqrt` samples about 20 features per split, most of
   them rare. Removing redundant templates makes informative ones more likely to be sampled (seed 42: +0.018).
   However, keeping the most frequent template of a cluster sometimes discards the rarer, anomaly-specific

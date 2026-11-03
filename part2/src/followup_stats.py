@@ -4,7 +4,9 @@
 
 (a) PCA stability: are the same anomalies missed in every resample, how far they are from the threshold, and the best
 F1 any threshold could give (chosen on the test set, diagnostic only). (b) LogGPT F1 spread with the 50% rule and at
-each fixed K. (c) LogGPT model size and number of tokens it processes. Writes results/followup/followup_stats.json.
+each fixed K. (c) LogGPT model size and number of tokens it processes. (d) PCA: which templates the missed anomalies
+contain. (e) LogGPT: sessions with a template unseen in training, and how many of them are flagged.
+Writes results/followup/followup_stats.json.
 """
 import argparse
 import itertools
@@ -20,6 +22,16 @@ from .run_resamples import load_config, p2path
 from p1.common import load_config as load_p1_config
 from p1.partition import load_sessions
 from p1.split import get_split
+
+REPLICATION_TEMPLATE = 9    # BLOCK* ask <*> to replicate <*> to datanode(s) <*>
+DELETE_ERROR_TEMPLATE = 33  # Unexpected error trying to delete block <*>. BlockInfo not found in volumeMap.
+
+
+def contains_template(s, template_id):
+    """[n_sessions] True if the session has at least one event of this template."""
+    hit = np.zeros(len(s), dtype=bool)
+    hit[np.searchsorted(s.offsets, np.flatnonzero(s.events == template_id), side="right") - 1] = True
+    return hit
 
 
 def pca_stats(cfg):
@@ -44,6 +56,36 @@ def pca_stats(cfg):
         pairs.append(dict(n_shared=len(shared), n_missed_a=int(ma.sum()), n_missed_b=int(mb.sum()),
                           n_differ=int((ma != mb).sum())))
     return dict(per_seed=per_seed, pairs=pairs)
+
+
+def pca_template_stats(cfg, s):
+    res = p2path(cfg, "results_dir")
+    replication, delete_error = contains_template(s, REPLICATION_TEMPLATE), contains_template(s, DELETE_ERROR_TEMPLATE)
+    per_seed = []
+    for seed in cfg["seeds"]:
+        d = pd.read_parquet(res / "scores" / f"pca_seed{seed}.parquet")
+        idx, anomalous, flagged = d.session_idx.values, d.label.values == 1, d.prediction.values == 1
+        per_seed.append(dict(seed=seed,
+                             missed_with_replication=float(replication[idx][anomalous & ~flagged].mean()),
+                             anomalous_with_delete_error=float(delete_error[idx][anomalous].mean()),
+                             delete_error_detected=float(flagged[anomalous & delete_error[idx]].mean())))
+    return dict(per_seed=per_seed, mean=pd.DataFrame(per_seed).drop(columns="seed").mean().to_dict())
+
+
+def loggpt_unseen_stats(cfg, s):
+    """Unseen = the session has a template that is not in the vocabulary built from that seed's 5,000 training sessions."""
+    res = p2path(cfg, "results_dir")
+    per_seed = []
+    for seed in cfg["seeds"]:
+        known = np.zeros(int(s.events.max()) + 1, dtype=bool)
+        itos = json.load(open(res / "scores" / f"loggpt_seed{seed}.json"))["info"]["itos"]
+        known[[int(t) for t in itos if str(t).isdigit()]] = True
+        unseen = np.add.reduceat((~known[s.events]).astype(np.int64), s.offsets[:-1]) > 0
+        d = pd.read_parquet(res / "scores" / f"loggpt_seed{seed}.parquet")
+        hit, anomalous, flagged = unseen[d.session_idx.values], d.label.values == 1, d.prediction.values == 1
+        per_seed.append(dict(seed=seed, n_anomalous=int(anomalous.sum()), n_anomalous_unseen=int((hit & anomalous).sum()),
+                             n_normal_unseen=int((hit & ~anomalous).sum()), unseen_flagged=float(flagged[hit].mean())))
+    return dict(per_seed=per_seed, mean=pd.DataFrame(per_seed).drop(columns="seed").mean().to_dict())
 
 
 def loggpt_spread(cfg):
@@ -101,7 +143,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="configs/part2_hdfs.yaml")
     cfg = load_config(ap.parse_args().config)
-    out = dict(pca=pca_stats(cfg), loggpt_spread=loggpt_spread(cfg), loggpt_tokens=loggpt_tokens(cfg))
+    s = load_sessions(load_p1_config(cfg["part1_config"]))
+    out = dict(pca=pca_stats(cfg), loggpt_spread=loggpt_spread(cfg), loggpt_tokens=loggpt_tokens(cfg),
+               pca_templates=pca_template_stats(cfg, s), loggpt_unseen=loggpt_unseen_stats(cfg, s))
     path = p2path(cfg, "results_dir", "followup") / "followup_stats.json"
     json.dump(out, open(path, "w"), indent=1, default=float)
     print("wrote", path)
